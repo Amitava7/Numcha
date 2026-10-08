@@ -36,9 +36,28 @@ at_least() {  # at_least <value> <minimum>
     awk -v v="$1" -v m="$2" 'BEGIN {exit !(v + 0 >= m + 0)}'
 }
 
+# The view hierarchy as XML. uiautomator sometimes cannot get an idle screen
+# (a focused text field, the keyboard opening), so try a few times.
 ui() {
-    adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1 || true
-    adb shell cat /sdcard/ui.xml 2>/dev/null || true
+    local i out
+    for i in 1 2 3 4; do
+        adb shell rm -f /sdcard/ui.xml >/dev/null 2>&1 || true
+        out=$(adb shell uiautomator dump /sdcard/ui.xml 2>&1 || true)
+        if adb shell cat /sdcard/ui.xml 2>/dev/null | grep -q '<hierarchy'; then
+            adb shell cat /sdcard/ui.xml
+            return 0
+        fi
+        echo "uiautomator dump failed ($out), retrying" >&2
+        sleep 1
+    done
+    return 0
+}
+
+# GitHub turns ::error:: lines into annotations and drops them from the log,
+# so say it twice.
+fail() {
+    echo "::error::$1"
+    echo "SMOKE TEST FAILED: $1"
 }
 
 # Taps the middle of the first node matching an attribute, e.g. 'text="Save"'.
@@ -48,7 +67,7 @@ tap_node() {
         | grep -o 'bounds="\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]"' | head -1 \
         | tr -c '0-9' ' ' | awk '{print int(($1+$3)/2), int(($2+$4)/2)}')
     if [ -z "$xy" ]; then
-        echo "::error::nothing on screen matches $match"
+        fail "nothing on screen matches $match"
         ui | tr '<' '\n' | grep -o 'text="[^"]*"' | grep -v 'text=""' || true
         shot "missing-node"
         exit 1
@@ -60,7 +79,7 @@ tap_node() {
 
 expect() {
     if ! ui | grep -qF "$1"; then
-        echo "::error::expected to see \"$1\""
+        fail "expected to see \"$1\""
         shot "missing-${2:-text}"
         ui | tr '<' '\n' | grep -o 'text="[^"]*"' | grep -v 'text=""' || true
         exit 1
@@ -69,7 +88,7 @@ expect() {
 
 crashed() {
     if adb logcat -d | grep -q "FATAL EXCEPTION"; then
-        echo "::error::$1 crashed"
+        fail "$1 crashed"
         adb logcat -d | grep -A 40 "FATAL EXCEPTION"
         shot "$1-crash"
         exit 1
@@ -136,11 +155,11 @@ GREEN=$(pct Calendar-month GREEN)
 EMPTY=$(pct Calendar-month EMPTY)
 echo "month mosaic: green=$GREEN% empty=$EMPTY%"
 if ! at_least "$GREEN" 0.3; then
-    echo "::error::the green day is not on the month mosaic"
+    fail "the green day is not on the month mosaic"
     exit 1
 fi
 if ! at_least "$EMPTY" 5; then
-    echo "::error::the month mosaic has no empty days drawn"
+    fail "the month mosaic has no empty days drawn"
     exit 1
 fi
 tap_node 'text="Year"'
@@ -148,7 +167,7 @@ crashed Calendar-year
 shot Calendar-year
 render Calendar-year --top 0.15 --bottom 0.75
 if ! at_least "$(pct Calendar-year EMPTY)" 5; then
-    echo "::error::the year mosaic did not draw"
+    fail "the year mosaic did not draw"
     exit 1
 fi
 tap_node 'text="Month"'
@@ -173,11 +192,14 @@ tap_node 'text="Settings"'
 expect "Export to a file" settings
 tap_node 'text="Lock with PIN"'
 expect "Choose a PIN" pin-dialog
+# the keyboard's Done key presses the dialog's button
 adb shell input text 2468
-tap_node 'text="Next"'
+adb shell input keyevent 66
+sleep 2
 expect "same PIN again" pin-confirm
 adb shell input text 2468
-tap_node 'text="Set PIN"'
+adb shell input keyevent 66
+sleep 2
 crashed Settings-pin
 expect "Change PIN" pin-on
 shot Settings-locked
@@ -187,7 +209,7 @@ adb shell am force-stop "$PKG"
 open_screen MainActivity
 expect "Numcha is locked" lock-screen
 if ui | grep -qF "Smoke test day"; then
-    echo "::error::the journal is visible behind the lock"
+    fail "the journal is visible behind the lock"
     exit 1
 fi
 for k in 1 1 1 1; do tap_node "text=\"$k\""; done
@@ -202,7 +224,8 @@ shot Main-unlocked
 tap_node 'text="Settings"'
 tap_node 'text="Lock with PIN"'
 adb shell input text 2468
-tap_node 'text="OK"'
+adb shell input keyevent 66
+sleep 2
 crashed Settings-unlock
 adb shell am force-stop "$PKG"
 open_screen MainActivity

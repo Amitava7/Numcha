@@ -177,7 +177,17 @@ public final class SettingsActivity extends Base {
         e.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
         e.setFilters(new android.text.InputFilter[]{
                 new android.text.InputFilter.LengthFilter(Lock.MAX_PIN)});
+        e.setSingleLine(true);
+        e.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_DONE);
         return e;
+    }
+
+    /** Lets the keyboard's Done key press the dialog's main button. */
+    private static void doneClicks(EditText field, final Button ok) {
+        field.setOnEditorActionListener((v, action, event) -> {
+            ok.performClick();
+            return true;
+        });
     }
 
     private LinearLayout dialogBody(TextView msg, EditText field) {
@@ -209,6 +219,7 @@ public final class SettingsActivity extends Base {
         d.setOnDismissListener(x -> showLock());
         d.setOnShowListener(x -> {
             Ui.showKeyboard(this, field);
+            doneClicks(field, d.getButton(AlertDialog.BUTTON_POSITIVE));
             d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
                 long wait = Lock.waitMs(this);
                 if (wait > 0) {
@@ -246,6 +257,7 @@ public final class SettingsActivity extends Base {
         d.setOnShowListener(x -> {
             Ui.showKeyboard(this, field);
             final Button ok = d.getButton(AlertDialog.BUTTON_POSITIVE);
+            doneClicks(field, ok);
             ok.setOnClickListener(v -> {
                 String s = field.getText().toString();
                 if (first[0] == null) {
