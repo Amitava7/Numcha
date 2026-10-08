@@ -185,7 +185,10 @@ public final class SettingsActivity extends Base {
     /** Lets the keyboard's Done key press the dialog's main button. */
     private static void doneClicks(EditText field, final Button ok) {
         field.setOnEditorActionListener((v, action, event) -> {
-            ok.performClick();
+            // A hardware Enter arrives twice, as key down and key up: act once.
+            if (event == null || event.getAction() == android.view.KeyEvent.ACTION_DOWN) {
+                ok.performClick();
+            }
             return true;
         });
     }
