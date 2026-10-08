@@ -95,9 +95,12 @@ public final class LockActivity extends Activity {
         showWait();
     }
 
+    // onStop rather than onPause: on some phones the fingerprint dialog itself
+    // pauses the activity underneath it.
     @Override
-    protected void onPause() {
-        super.onPause();
+    protected void onStop() {
+        super.onStop();
+        promptedOnce = false;
         if (cancel != null) cancel.cancel();
         cancel = null;
     }
