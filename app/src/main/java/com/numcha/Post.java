@@ -7,24 +7,26 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
 
-/** One journal entry. Everything but the time is optional. */
+/** One journal entry. It always has a time and a colour; everything else is optional. */
 final class Post {
 
-    // The colour mark. Stored as these numbers, in the database and in exports.
-    static final int NONE = 0;
+    // The colour mark. Stored as these numbers in the database. 0 means "any"
+    // in a filter and is never stored.
+    static final int ANY = 0;
     static final int GREEN = 1;
     static final int YELLOW = 2;
     static final int RED = 3;
     static final int BLACK = 4;
 
     static final int[] MOODS = {GREEN, YELLOW, RED, BLACK};
+    static final int DEFAULT = YELLOW;
 
     long id;          // row id, 0 until saved
     String uid;       // stable across export and import, so a re-import updates
     long at;          // when it happened, epoch millis
     String title = "";
     String body = "";
-    int mood = NONE;
+    int mood = DEFAULT;
     String photo;     // file name under files/photos, or null
 
     static int color(int mood) {
@@ -32,8 +34,7 @@ final class Post {
             case GREEN: return Ui.GREEN;
             case YELLOW: return Ui.YELLOW;
             case RED: return Ui.RED;
-            case BLACK: return Ui.BLACK;
-            default: return Ui.PLAIN;
+            default: return Ui.BLACK;
         }
     }
 
@@ -42,13 +43,17 @@ final class Post {
             case GREEN: return "Green";
             case YELLOW: return "Yellow";
             case RED: return "Red";
-            case BLACK: return "Black";
-            default: return "No colour";
+            default: return "Black";
         }
     }
 
     static int clampMood(int m) {
-        return m >= GREEN && m <= BLACK ? m : NONE;
+        return m >= GREEN && m <= BLACK ? m : DEFAULT;
+    }
+
+    /** Text that reads on a square or slice of this colour. */
+    static int ink(int mood) {
+        return mood == GREEN || mood == YELLOW ? Ui.INK_DARK : Ui.TEXT;
     }
 
     LocalDateTime local() {
@@ -57,11 +62,6 @@ final class Post {
 
     LocalDate day() {
         return local().toLocalDate();
-    }
-
-    boolean isEmpty() {
-        return title.trim().isEmpty() && body.trim().isEmpty() && photo == null
-                && mood == NONE;
     }
 
     private static final DateTimeFormatter DATE =

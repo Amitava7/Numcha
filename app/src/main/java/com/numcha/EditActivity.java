@@ -30,9 +30,9 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 
 /**
- * Writes or edits one post. A new post takes the current date and time; both
- * can be changed. Title, text, colour and photo are all optional, but a post
- * needs at least one of them.
+ * Writes or edits one post. A new post takes the current date and time, both
+ * of which can be changed, and starts out yellow. Every post has a colour;
+ * title, text and picture are optional.
  */
 public final class EditActivity extends Base {
 
@@ -53,7 +53,7 @@ public final class EditActivity extends Base {
     private EditText title, body;
     private ImageView photoView;
     private Button removePhoto;
-    private final View[] swatches = new View[5];
+    private final View[] swatches = new View[Post.MOODS.length];
     private boolean busy;
 
     @Override
@@ -126,9 +126,8 @@ public final class EditActivity extends Base {
         // colour
         form.addView(label("Colour"));
         LinearLayout colours = Ui.row(this);
-        int[] moods = {Post.NONE, Post.GREEN, Post.YELLOW, Post.RED, Post.BLACK};
-        for (int i = 0; i < moods.length; i++) {
-            final int m = moods[i];
+        for (int i = 0; i < Post.MOODS.length; i++) {
+            final int m = Post.MOODS[i];
             View s = new View(this);
             s.setContentDescription(Post.name(m));
             s.setOnClickListener(v -> {
@@ -215,23 +214,13 @@ public final class EditActivity extends Base {
     }
 
     private void showMood() {
-        int[] moods = {Post.NONE, Post.GREEN, Post.YELLOW, Post.RED, Post.BLACK};
         for (int i = 0; i < swatches.length; i++) {
-            GradientDrawable g = new GradientDrawable();
-            g.setShape(GradientDrawable.OVAL);
-            boolean on = post.mood == moods[i];
-            if (moods[i] == Post.NONE) {
-                g.setColor(Ui.BG);
-                g.setStroke(Ui.dp(this, on ? 3 : 2), on ? Ui.TEXT : Ui.DIM);
-            } else {
-                g.setColor(Post.color(moods[i]));
-                if (on) g.setStroke(Ui.dp(this, 3), Ui.TEXT);
-                else if (moods[i] == Post.BLACK) g.setStroke(Ui.dp(this, 1), Ui.BLACK_EDGE);
-            }
+            int m = Post.MOODS[i];
+            boolean on = post.mood == m;
+            GradientDrawable g = Ui.dot(this, m);
+            if (on) g.setStroke(Ui.dp(this, 4), Ui.TEXT);
             swatches[i].setBackground(g);
             swatches[i].setSelected(on);
-            swatches[i].setScaleX(on ? 1.12f : 1f);
-            swatches[i].setScaleY(on ? 1.12f : 1f);
         }
     }
 
@@ -368,11 +357,6 @@ public final class EditActivity extends Base {
         if (busy) return;
         post.title = title.getText().toString().trim();
         post.body = body.getText().toString().trim();
-        if (post.isEmpty()) {
-            Toast.makeText(this, "Add a title, some text, a colour or a picture first",
-                    Toast.LENGTH_SHORT).show();
-            return;
-        }
         Store s = Store.get(this);
         s.save(post);
         if (origPhoto != null && !origPhoto.equals(post.photo)) s.deletePhoto(origPhoto);

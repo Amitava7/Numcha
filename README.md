@@ -12,24 +12,42 @@ There is nothing to install locally.
 ## What it does
 
 **Posts.** "New post" stamps the current date and time. Tap *Change* to move
-it to another date or time, e.g. to write up yesterday. Every part of a post is
-optional, but it needs at least one:
+it to another date or time, e.g. to write up yesterday. Every post has a
+**colour** (green, yellow, red or black), which starts as yellow; everything
+else is optional:
 
 - a **title**
 - some **text**
-- a **colour**: green, yellow, red or black
 - a **picture**, taken with the camera or picked from the gallery
 
 Tap a post in the list to edit or delete it.
 
-**Calendar.** *Month* shows a calendar of coloured squares, one per day.
-*Year* shows all twelve months, 365 squares. Under each is a count of how many
-days were green, yellow, red and black, how many were written with no colour,
-and how many have nothing written. Tap a day to see its posts or write one for
-it. Tap a month in the year view to open it.
+**Filtering the journal.** Above the list:
 
-If a day has more than one post, the square takes the colour of the day's
-latest post that has a colour.
+- the **date** chip (*All dates* ▾) narrows the list to *a day*, *a month* or
+  *a year*; the ‹ › arrows beside it step to the previous or next one
+- the **colour** chips (*All*, *Green*, *Yellow*, *Red*, *Black*) show one
+  colour only; tap the chosen chip again to show every colour
+- the two combine (e.g. red posts in March), and *Clear* resets both
+
+**Calendar.** *Month* shows a calendar of coloured squares, one per day.
+*Year* shows all twelve months, 365 squares. A day takes the colour of its
+latest post.
+
+Under the squares, a **donut chart** shows how the written days split by
+colour, with a count on each slice and a legend beside it. Only colours that
+occurred appear; days with nothing written are left out of the chart (the line
+above it says how many days of the month or year were written).
+
+Tap to list posts underneath:
+
+- **a day**: that day's posts, with *Write for this day*
+- **the heading** (*October 2026*, or *2026* in the year view): every post of
+  the month or year
+- **a month's name** in the year view: every post of that month, with a button
+  to open it in the month view
+- **a slice of the donut** or a legend row: the posts of that colour in the
+  month or year on screen; tap it again to close
 
 **Lock.** In Settings, *Lock with PIN* (4 to 8 digits) and *Unlock with
 fingerprint* can each be switched on and off. With the lock on, Numcha asks for
@@ -92,12 +110,13 @@ compatibility code for anything older.
 1. **Build release APK**: assembles, signs, prints a size breakdown in the
    job summary and fails past a 1.5 MB budget.
 2. **Launch on an emulator**: installs the APK on Android 14 and uses it by
-   finding buttons in the view hierarchy. It opens every screen, writes a post
-   (changing its date and time and making it green), checks an empty post is
-   refused, finds the green day on the month mosaic, opens the year view,
-   rotates the screen, turns the PIN lock on, restarts the app and checks that
-   the journal is hidden, that a wrong PIN is rejected and the right one opens
-   it, and turns the lock off again. It prints the calendar as ASCII in the log
+   finding buttons in the view hierarchy. It opens every screen, saves a
+   colour-only post (yellow by default) and a green one with a changed date
+   and time, filters the list by colour and by day, finds the green day on the
+   month mosaic, lists posts from the donut legend and the month heading, opens
+   the year view and lists the year, rotates the screen, turns the PIN lock on,
+   restarts the app and checks that the journal is hidden, that a wrong PIN is
+   rejected and the right one opens it, and turns the lock off again. It prints the calendar as ASCII in the log
    (`tools/screen_ascii.py`) and fails on any crash. Screenshots are uploaded
    as the `screenshots` artifact.
 
@@ -114,10 +133,12 @@ app/src/main/java/com/numcha/
   Archive.java           export / import as a zip
   Lock.java              PIN hash, attempt limit, when to relock
   App.java  Base.java    relocking when the app leaves the screen
-  MainActivity.java      the list of posts
+  MainActivity.java      the list of posts and its filters
   EditActivity.java      writing and editing a post
-  CalendarActivity.java  month / year mosaic and counts
+  CalendarActivity.java  month / year mosaic, donut, post lists
   MosaicView.java        draws the squares
+  PieView.java           the donut of days by colour
+  PostCard.java          one post as a card, used by both lists
   SettingsActivity.java  lock and data settings
   LockActivity.java      PIN pad and fingerprint prompt
   CameraFiles.java       a one-file provider the camera app writes into

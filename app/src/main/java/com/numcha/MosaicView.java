@@ -18,11 +18,11 @@ import java.util.Map;
 
 /**
  * Days as coloured squares. Month mode is a seven-column calendar with the
- * day numbers in it. Year mode is twelve small months, one square a day.
+ * day numbers in it. Year mode is twelve small months, one square a day; tap a
+ * month's name for that month, or a square for that day.
  *
- * A day takes the colour of its latest coloured post; a day with posts but no
- * colour is grey; a day with nothing is a faint square; future days are an
- * outline only.
+ * A day takes the colour of its latest post; a day with nothing is a faint
+ * square; future days are an outline only.
  */
 final class MosaicView extends View {
 
@@ -37,6 +37,7 @@ final class MosaicView extends View {
     private int year = LocalDate.now().getYear();
     private Map<LocalDate, Integer> days = Collections.emptyMap();
     private LocalDate selected;
+    private YearMonth selectedMonth;
     private Listener listener;
 
     private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -45,8 +46,8 @@ final class MosaicView extends View {
     private final RectF r = new RectF();
     private final float gap, radius;
 
-    // layout of the last draw, for hit testing
-    private float cell, left, top, blockW, blockH, headH;
+    // where things are, worked out from the current size by place()
+    private float cell, top, blockW, blockH, headH;
 
     MosaicView(Context c) {
         super(c);
@@ -82,6 +83,11 @@ final class MosaicView extends View {
         invalidate();
     }
 
+    void selectMonth(YearMonth m) {
+        selectedMonth = m;
+        invalidate();
+    }
+
     @Override
     protected void onMeasure(int wSpec, int hSpec) {
         int w = MeasureSpec.getSize(wSpec);
@@ -98,18 +104,33 @@ final class MosaicView extends View {
         setMeasuredDimension(w, h);
     }
 
+    /**
+     * Works out the square size and offsets for the current mode and width.
+     * Drawing and hit testing both call it, so a tap that arrives before the
+     * next frame (say, just after switching month and year) still lands right.
+     */
+    private void place() {
+        float w = getWidth();
+        if (yearMode) {
+            blockW = w / 3f;
+            cell = (blockW - gap * 2) / 7f;
+            headH = Ui.dp(getContext(), 22);
+            blockH = headH + 6 * cell + gap * 2;
+        } else {
+            cell = w / 7f;
+            headH = Ui.dp(getContext(), 24);
+            top = headH;
+        }
+    }
+
     @Override
     protected void onDraw(Canvas canvas) {
+        place();
         if (yearMode) drawYear(canvas);
         else drawMonth(canvas);
     }
 
     private void drawMonth(Canvas canvas) {
-        float w = getWidth();
-        cell = w / 7f;
-        headH = Ui.dp(getContext(), 24);
-        left = 0;
-        top = headH;
         label.setColor(Ui.DIM);
         label.setTextSize(Ui.dp(getContext(), 12));
         label.setTypeface(Typeface.DEFAULT_BOLD);
@@ -127,28 +148,21 @@ final class MosaicView extends View {
             LocalDate day = month.atDay(d);
             square(canvas, day, x, y, cell, today);
             Integer m = days.get(day);
-            int c = m == null ? Ui.EMPTY : Post.color(m);
-            label.setColor(m != null && (m == Post.GREEN || m == Post.YELLOW) ? 0xFF10151B
-                    : day.isAfter(today) ? Ui.DIM : Ui.TEXT);
-            if (c == Ui.EMPTY && !day.isAfter(today)) label.setColor(Ui.DIM);
+            label.setColor(m != null ? Post.ink(m) : Ui.DIM);
             canvas.drawText(String.valueOf(d), x + cell / 2,
                     y + cell / 2 - (label.descent() + label.ascent()) / 2, label);
         }
     }
 
     private void drawYear(Canvas canvas) {
-        float w = getWidth();
-        blockW = w / 3f;
-        cell = (blockW - gap * 2) / 7f;
-        headH = Ui.dp(getContext(), 22);
-        blockH = headH + 6 * cell + gap * 2;
         LocalDate today = LocalDate.now();
         label.setTextSize(Ui.dp(getContext(), 13));
         label.setTypeface(Typeface.DEFAULT_BOLD);
         for (int mo = 1; mo <= 12; mo++) {
             YearMonth ym = YearMonth.of(year, mo);
             float bx = ((mo - 1) % 3) * blockW + gap, by = ((mo - 1) / 3) * blockH;
-            label.setColor(ym.equals(YearMonth.from(today)) ? Ui.ACCENT : Ui.DIM);
+            label.setColor(ym.equals(selectedMonth) ? Ui.TEXT
+                    : ym.equals(YearMonth.from(today)) ? Ui.ACCENT : Ui.DIM);
             canvas.drawText(ym.getMonth().getDisplayName(TextStyle.SHORT, Locale.getDefault()),
                     bx + 7 * cell / 2, by + headH - Ui.dp(getContext(), 7), label);
             int offset = ym.atDay(1).getDayOfWeek().getValue() - 1;
@@ -190,12 +204,25 @@ final class MosaicView extends View {
     public boolean onTouchEvent(MotionEvent e) {
         if (e.getAction() == MotionEvent.ACTION_DOWN) return true;
         if (e.getAction() != MotionEvent.ACTION_UP || listener == null) return false;
+        if (getWidth() == 0) return true;
+        place();
         float x = e.getX(), y = e.getY();
         if (yearMode) {
             int col = (int) (x / blockW), row = (int) (y / blockH);
-            if (col >= 0 && col < 3 && row >= 0 && row < 4) {
+            if (col < 0 || col > 2 || row < 0 || row > 3) return true;
+            YearMonth ym = YearMonth.of(year, row * 3 + col + 1);
+            float bx = col * blockW + gap, by = row * blockH;
+            if (y - by < headH) {               // the month's name
                 performClick();
-                listener.onMonth(YearMonth.of(year, row * 3 + col + 1));
+                listener.onMonth(ym);
+                return true;
+            }
+            int c = (int) ((x - bx) / cell), r = (int) ((y - by - headH) / cell);
+            int offset = ym.atDay(1).getDayOfWeek().getValue() - 1;
+            int d = r * 7 + c - offset + 1;
+            if (c >= 0 && c < 7 && r >= 0 && d >= 1 && d <= ym.lengthOfMonth()) {
+                performClick();
+                listener.onDay(ym.atDay(d));
             }
             return true;
         }

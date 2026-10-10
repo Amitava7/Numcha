@@ -43,7 +43,7 @@ final class Store extends SQLiteOpenHelper {
                 "at INTEGER NOT NULL," +
                 "title TEXT NOT NULL DEFAULT ''," +
                 "body TEXT NOT NULL DEFAULT ''," +
-                "mood INTEGER NOT NULL DEFAULT 0," +
+                "mood INTEGER NOT NULL DEFAULT 2," +
                 "photo TEXT)");
         db.execSQL("CREATE INDEX posts_at ON posts(at)");
     }
@@ -108,25 +108,49 @@ final class Store extends SQLiteOpenHelper {
 
     /** Posts whose time falls on [from, to] inclusive, oldest first. */
     List<Post> between(LocalDate from, LocalDate to) {
-        long a = Post.toMillis(from.atStartOfDay());
-        long b = Post.toMillis(to.plusDays(1).atTime(LocalTime.MIDNIGHT));
-        return query("at>=? AND at<?", new String[]{String.valueOf(a), String.valueOf(b)},
-                "at ASC, id ASC");
+        return find(from, to, Post.ANY, true);
     }
 
     /**
-     * The colour each day shows on the calendar: that of the day's latest post
-     * that has a colour, or {@link Post#NONE} if it has posts but none coloured.
+     * Posts on the days [from, to] inclusive (either end may be null for
+     * open-ended) with the given colour ({@link Post#ANY} for every colour).
+     */
+    List<Post> find(LocalDate from, LocalDate to, int mood, boolean oldestFirst) {
+        StringBuilder where = new StringBuilder();
+        List<String> args = new ArrayList<String>();
+        if (from != null) {
+            where.append("at>=?");
+            args.add(String.valueOf(Post.toMillis(from.atStartOfDay())));
+        }
+        if (to != null) {
+            if (where.length() > 0) where.append(" AND ");
+            where.append("at<?");
+            args.add(String.valueOf(Post.toMillis(to.plusDays(1).atTime(LocalTime.MIDNIGHT))));
+        }
+        if (mood != Post.ANY) {
+            if (where.length() > 0) where.append(" AND ");
+            where.append("mood=?");
+            args.add(String.valueOf(mood));
+        }
+        return query(where.length() == 0 ? null : where.toString(),
+                args.isEmpty() ? null : args.toArray(new String[0]),
+                oldestFirst ? "at ASC, id ASC" : "at DESC, id DESC");
+    }
+
+    /**
+     * The colour each day shows on the calendar: that of the day's latest post.
      * Days with no posts are absent from the map.
      */
     Map<LocalDate, Integer> days(LocalDate from, LocalDate to) {
         Map<LocalDate, Integer> out = new HashMap<LocalDate, Integer>();
-        for (Post p : between(from, to)) {
-            LocalDate d = p.day();
-            Integer prev = out.get(d);
-            if (prev == null || p.mood != Post.NONE) out.put(d, p.mood);
-        }
+        for (Post p : between(from, to)) out.put(p.day(), p.mood);   // oldest first: last wins
         return out;
+    }
+
+    /** The day of the earliest post, or null if there are none. */
+    LocalDate firstDay() {
+        List<Post> l = query(null, null, "at ASC LIMIT 1");
+        return l.isEmpty() ? null : l.get(0).day();
     }
 
     void save(Post p) {
@@ -136,7 +160,8 @@ final class Store extends SQLiteOpenHelper {
         v.put("at", p.at);
         v.put("title", p.title == null ? "" : p.title);
         v.put("body", p.body == null ? "" : p.body);
-        v.put("mood", Post.clampMood(p.mood));
+        p.mood = Post.clampMood(p.mood);
+        v.put("mood", p.mood);
         if (p.photo == null) v.putNull("photo");
         else v.put("photo", p.photo);
         SQLiteDatabase db = getWritableDatabase();

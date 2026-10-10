@@ -22,10 +22,10 @@ final class Ui {
     static final int PANEL = 0xFF1F2630;
     static final int BUTTON = 0xFF2D3642;   // reads as a button against PANEL
     static final int EMPTY = 0xFF2A323D;    // a day with nothing written
-    static final int PLAIN = 0xFF56606D;    // a day written, but given no colour
     static final int TEXT = 0xFFE6EDF3;
     static final int DIM = 0xFF8B949E;
     static final int ACCENT = 0xFF58A6FF;
+    static final int INK_DARK = 0xFF10151B; // text on green and yellow
 
     static final int GREEN = 0xFF2FBF71;
     static final int YELLOW = 0xFFF2C94C;
@@ -105,6 +105,48 @@ final class Ui {
     private static int dim(int c) {
         return Color.argb(Color.alpha(c), Color.red(c) * 2 / 3, Color.green(c) * 2 / 3,
                 Color.blue(c) * 2 / 3);
+    }
+
+    /** A pill that shows whether it is the selected one of a group. */
+    static TextView chip(Context c, String label) {
+        TextView t = text(c, label, 14f, TEXT, false);
+        t.setGravity(Gravity.CENTER);
+        t.setSingleLine(true);
+        t.setPadding(dp(c, 4), dp(c, 8), dp(c, 4), dp(c, 8));
+        t.setMinHeight(dp(c, 40));
+        t.setClickable(true);
+        return t;
+    }
+
+    /**
+     * Shows whether a chip is the chosen one. A colour chip (mood other than
+     * Post.ANY) is outlined in its colour, and filled with it when chosen.
+     */
+    static void chipState(Context c, TextView chip, boolean on, int mood) {
+        GradientDrawable g = new GradientDrawable();
+        g.setCornerRadius(999f);
+        if (mood == Post.ANY) {
+            g.setColor(on ? BUTTON : BG);
+            g.setStroke(dp(c, on ? 2 : 1), on ? TEXT : BUTTON);
+            chip.setTextColor(on ? TEXT : DIM);
+        } else {
+            int col = Post.color(mood);
+            g.setColor(on ? col : BG);
+            g.setStroke(dp(c, on ? 2 : 1.5f), mood == Post.BLACK ? BLACK_EDGE : on ? TEXT : col);
+            chip.setTextColor(on ? Post.ink(mood) : TEXT);
+        }
+        chip.setBackground(g);
+        chip.setSelected(on);
+        chip.setTypeface(null, on ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL);
+    }
+
+    /** The coloured dot for a post's mark. */
+    static GradientDrawable dot(Context c, int mood) {
+        GradientDrawable g = new GradientDrawable();
+        g.setShape(GradientDrawable.OVAL);
+        g.setColor(Post.color(mood));
+        if (mood == Post.BLACK) g.setStroke(dp(c, 1), BLACK_EDGE);
+        return g;
     }
 
     static LinearLayout row(Context c) {

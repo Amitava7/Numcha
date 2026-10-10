@@ -112,9 +112,18 @@ adb shell am force-stop "$PKG"
 open_screen MainActivity
 expect "No posts yet" empty
 
-# ---- write a post ---------------------------------------------------------
+# ---- write two posts --------------------------------------------------------
+# A post needs nothing but its colour, and a new one starts yellow: saving
+# straight away keeps a yellow post.
 tap_node 'text="New post"'
-expect "New post" editor
+expect "Title (optional)" editor
+tap_node 'text="Save"'
+crashed Edit-save-yellow
+expect "Yellow day" yellow-post
+
+# The second one is green, with a title and a changed time. It is saved last,
+# so today shows green on the calendar.
+tap_node 'text="New post"'
 shot Edit-new
 # the time can be changed: open both pickers and accept them
 tap_node 'text="Change"'
@@ -133,20 +142,34 @@ shot Edit-filled
 tap_node 'text="Save"'
 crashed Edit-save
 expect "Smoke test day" saved-post
-shot Main-one-post
+expect "2 posts" two-posts
+shot Main-two-posts
 
-# a post with nothing in it is refused rather than saved
-tap_node 'text="New post"'
-tap_node 'text="Save"'
-expect 'text="Save"' empty-refused
-adb shell input keyevent 4
-sleep 2
-expect "Smoke test day" back-to-list
+# ---- dashboard filters --------------------------------------------------------
+tap_node 'content-desc="Green posts only"'
+expect "1 post matches the filters" green-filter
+if ui | grep -qF "Yellow day"; then
+    fail "the yellow post is still listed under the green filter"
+    exit 1
+fi
+shot Main-green
+tap_node 'content-desc="Green posts only"'   # again: every colour
+expect "Yellow day" filter-off
+# today only, then the day before, which has nothing
+tap_node 'content-desc="Choose dates"'
+tap_node 'text="A day…"'
+tap_node 'text="OK"'
+expect "2 posts match the filters" day-filter
+tap_node 'content-desc="Earlier"'
+expect "No posts match these filters." earlier-day
+tap_node 'text="Clear"'
+expect "2 posts" cleared
+crashed Main-filters
 
 # ---- calendar ---------------------------------------------------------------
 tap_node 'text="Calendar"'
 crashed Calendar
-expect "Nothing written" calendar-counts
+expect "days written in" calendar-summary
 shot Calendar-month
 # the month mosaic must really show the green day
 # (stopping above the colour key, whose own green square would also count)
@@ -162,6 +185,21 @@ if ! at_least "$EMPTY" 5; then
     fail "the month mosaic has no empty days drawn"
     exit 1
 fi
+# the donut's legend: only today's colour, green; tapping it lists green posts
+expect "1 day · 100%" chart-legend
+if ui | grep -qF 'text="Yellow"'; then
+    fail "the chart shows yellow, but today ended green"
+    exit 1
+fi
+tap_node 'text="Green"'
+expect "Green posts in" colour-list
+expect "Smoke test day" colour-list-post
+shot Calendar-green
+# the heading lists the whole month
+tap_node ', show its posts"'
+expect "All posts in" month-list
+expect "Yellow day" month-list-post
+shot Calendar-month-list
 tap_node 'text="Year"'
 crashed Calendar-year
 shot Calendar-year
@@ -170,6 +208,9 @@ if ! at_least "$(pct Calendar-year EMPTY)" 5; then
     fail "the year mosaic did not draw"
     exit 1
 fi
+tap_node ', show its posts"'
+expect "All posts in" year-list
+crashed Calendar-year-list
 tap_node 'text="Month"'
 tap_node 'content-desc="Previous"'
 tap_node 'content-desc="Next"'

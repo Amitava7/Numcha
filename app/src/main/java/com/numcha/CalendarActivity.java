@@ -1,7 +1,6 @@
 package com.numcha;
 
 import android.content.Intent;
-import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -21,21 +20,36 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * The mosaic: a month or a year of days in their colours, with a count of how
- * many days were green, yellow, red and black. Tapping a day lists its posts.
+ * The mosaic: a month or a year of days in their colours, and a donut of how
+ * many of the written days were green, yellow, red and black.
+ *
+ * Below it, a list of posts for whatever was tapped last: a day, a month (the
+ * heading in month view, a month's name in year view), the year (the heading in
+ * year view), or a colour in the donut, which lists that colour's posts in the
+ * month or year on screen.
  */
 public final class CalendarActivity extends Base {
+
+    private static final int NONE = 0, DAY = 1, MONTH = 2, YEAR = 3, COLOUR = 4;
 
     private final Handler ui = new Handler(Looper.getMainLooper());
     private boolean yearMode;
     private YearMonth month = YearMonth.now();
     private int year = LocalDate.now().getYear();
-    private LocalDate selected;
+
+    // what the list under the chart shows
+    private int pick = NONE;
+    private LocalDate pickDay;
+    private YearMonth pickMonth;
+    private int pickMood = Post.ANY;
 
     private Button monthTab, yearTab;
-    private TextView heading;
+    private TextView heading, summary;
     private MosaicView mosaic;
-    private LinearLayout counts, dayPosts;
+    private PieView pie;
+    private LinearLayout chartRow, legend, listBox;
+    private ScrollView scroll;
+    private int loads;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -45,8 +59,13 @@ public final class CalendarActivity extends Base {
             month = YearMonth.of(state.getInt("y", month.getYear()),
                     state.getInt("m", month.getMonthValue()));
             year = state.getInt("yy", year);
-            long sel = state.getLong("sel", Long.MIN_VALUE);
-            if (sel != Long.MIN_VALUE) selected = LocalDate.ofEpochDay(sel);
+            pick = state.getInt("pick", NONE);
+            long d = state.getLong("pd", Long.MIN_VALUE);
+            if (d != Long.MIN_VALUE) pickDay = LocalDate.ofEpochDay(d);
+            if (state.containsKey("pmy")) {
+                pickMonth = YearMonth.of(state.getInt("pmy"), state.getInt("pmm"));
+            }
+            pickMood = state.getInt("pmood", Post.ANY);
         }
 
         LinearLayout root = Ui.column(this);
@@ -59,12 +78,16 @@ public final class CalendarActivity extends Base {
         monthTab = Ui.button(this, "Month", Ui.BUTTON, Ui.TEXT);
         yearTab = Ui.button(this, "Year", Ui.BUTTON, Ui.TEXT);
         monthTab.setOnClickListener(v -> {
+            if (!yearMode) return;
             yearMode = false;
+            if (pick == COLOUR) pick = NONE;
             refresh();
         });
         yearTab.setOnClickListener(v -> {
+            if (yearMode) return;
             yearMode = true;
             year = month.getYear();
+            if (pick == COLOUR) pick = NONE;
             refresh();
         });
         tabs.addView(monthTab);
@@ -84,6 +107,12 @@ public final class CalendarActivity extends Base {
         next.setOnClickListener(v -> step(1));
         heading = Ui.text(this, "", 20f, Ui.TEXT, true);
         heading.setGravity(Gravity.CENTER);
+        heading.setClickable(true);
+        heading.setMinHeight(Ui.dp(this, 44));
+        heading.setOnClickListener(v -> {
+            if (yearMode) choose(YEAR, null, null, Post.ANY);
+            else choose(MONTH, null, month, Post.ANY);
+        });
         nav.addView(prev);
         nav.addView(heading, Ui.lp(0, Ui.WRAP, 1f));
         nav.addView(next);
@@ -93,26 +122,38 @@ public final class CalendarActivity extends Base {
         mosaic = new MosaicView(this);
         mosaic.setListener(new MosaicView.Listener() {
             public void onDay(LocalDate day) {
-                selected = day;
-                mosaic.select(day);
-                loadDay();
+                choose(DAY, day, null, Post.ANY);
             }
 
             public void onMonth(YearMonth m) {
-                month = m;
-                yearMode = false;
-                refresh();
+                choose(MONTH, null, m, Post.ANY);
             }
         });
         body.addView(mosaic, Ui.lp(Ui.MATCH, Ui.WRAP));
-        counts = Ui.column(this);
-        counts.setPadding(0, Ui.dp(this, 14), 0, Ui.dp(this, 6));
-        body.addView(counts);
-        dayPosts = Ui.column(this);
-        dayPosts.setPadding(0, 0, 0, Ui.dp(this, 24));
-        body.addView(dayPosts);
 
-        ScrollView scroll = new ScrollView(this);
+        summary = Ui.text(this, "", 15f, Ui.TEXT, true);
+        summary.setPadding(0, Ui.dp(this, 16), 0, Ui.dp(this, 4));
+        body.addView(summary);
+
+        chartRow = Ui.row(this);
+        pie = new PieView(this);
+        pie.setListener(this::toggleColour);
+        chartRow.addView(pie);
+        legend = Ui.column(this);
+        legend.setPadding(Ui.dp(this, 16), 0, 0, 0);
+        chartRow.addView(legend, Ui.lp(0, Ui.WRAP, 1f));
+        body.addView(chartRow, Ui.lp(Ui.MATCH, Ui.WRAP));
+
+        TextView hint = Ui.text(this, "Tap a day, a month’s name, the heading above, or a "
+                + "colour to list its posts.", 13f, Ui.DIM, false);
+        hint.setPadding(0, Ui.dp(this, 8), 0, 0);
+        body.addView(hint);
+
+        listBox = Ui.column(this);
+        listBox.setPadding(0, 0, 0, Ui.dp(this, 24));
+        body.addView(listBox);
+
+        scroll = new ScrollView(this);
         scroll.addView(body);
         root.addView(scroll, Ui.lp(Ui.MATCH, 0, 1f));
         setContentView(root);
@@ -132,139 +173,237 @@ public final class CalendarActivity extends Base {
         out.putInt("y", month.getYear());
         out.putInt("m", month.getMonthValue());
         out.putInt("yy", year);
-        if (selected != null) out.putLong("sel", selected.toEpochDay());
+        out.putInt("pick", pick);
+        if (pickDay != null) out.putLong("pd", pickDay.toEpochDay());
+        if (pickMonth != null) {
+            out.putInt("pmy", pickMonth.getYear());
+            out.putInt("pmm", pickMonth.getMonthValue());
+        }
+        out.putInt("pmood", pickMood);
     }
 
     private void step(int dir) {
         if (yearMode) year += dir;
         else month = month.plusMonths(dir);
+        if (pick == COLOUR) pick = NONE;
         refresh();
+    }
+
+    private LocalDate rangeFrom() {
+        return yearMode ? LocalDate.of(year, 1, 1) : month.atDay(1);
+    }
+
+    private LocalDate rangeTo() {
+        return yearMode ? LocalDate.of(year, 12, 31) : month.atEndOfMonth();
+    }
+
+    private String rangeName() {
+        return yearMode ? String.valueOf(year) : monthName(month);
+    }
+
+    private static String monthName(YearMonth m) {
+        return m.getMonth().getDisplayName(TextStyle.FULL, Locale.getDefault()) + " "
+                + m.getYear();
+    }
+
+    /** Whether what the list shows still lies inside the month or year on screen. */
+    private boolean pickVisible() {
+        LocalDate a = rangeFrom(), b = rangeTo();
+        switch (pick) {
+            case DAY:
+                return pickDay != null && !pickDay.isBefore(a) && !pickDay.isAfter(b);
+            case MONTH:
+                return pickMonth != null && !pickMonth.atDay(1).isBefore(a)
+                        && !pickMonth.atEndOfMonth().isAfter(b);
+            case YEAR:
+                return yearMode;
+            case COLOUR:
+                return pickMood != Post.ANY;
+            default:
+                return false;
+        }
     }
 
     private void refresh() {
         monthTab.setTextColor(yearMode ? Ui.DIM : Ui.ACCENT);
         yearTab.setTextColor(yearMode ? Ui.ACCENT : Ui.DIM);
-        if (yearMode) {
-            heading.setText(String.valueOf(year));
-        } else {
-            heading.setText(month.getMonth().getDisplayName(TextStyle.FULL, Locale.getDefault())
-                    + " " + month.getYear());
-        }
+        heading.setText(rangeName());
+        heading.setContentDescription(rangeName() + ", show its posts");
+        if (!pickVisible()) pick = NONE;
+
         final boolean ym = yearMode;
         final YearMonth mo = month;
         final int yr = year;
-        final LocalDate from = ym ? LocalDate.of(yr, 1, 1) : mo.atDay(1);
-        final LocalDate to = ym ? LocalDate.of(yr, 12, 31) : mo.atEndOfMonth();
+        final LocalDate from = rangeFrom(), to = rangeTo();
         new Thread(() -> {
             final Map<LocalDate, Integer> d = Store.get(getApplicationContext()).days(from, to);
             ui.post(() -> {
                 if (isDestroyed() || ym != yearMode || !mo.equals(month) || yr != year) return;
                 if (ym) mosaic.showYear(yr, d);
                 else mosaic.showMonth(mo, d);
-                showCounts(d, from, to);
-                if (!ym && selected != null && YearMonth.from(selected).equals(mo)) {
-                    mosaic.select(selected);
-                    loadDay();
-                } else {
-                    mosaic.select(null);
-                    dayPosts.removeAllViews();
-                }
+                showChart(d, from, to);
+                showPick();
             });
         }, "calendar").start();
     }
 
-    private void showCounts(Map<LocalDate, Integer> d, LocalDate from, LocalDate to) {
-        counts.removeAllViews();
-        int[] n = new int[5];
-        for (Integer m : d.values()) n[m]++;
-        LocalDate today = LocalDate.now();
-        LocalDate last = to.isAfter(today) ? today : to;
-        long sofar = last.isBefore(from) ? 0 : last.toEpochDay() - from.toEpochDay() + 1;
-        int written = d.size();
-        long blank = Math.max(0, sofar - written);
+    // ---- the donut ------------------------------------------------------------
 
-        for (int m : Post.MOODS) counts.addView(countRow(Post.color(m), Post.name(m), n[m]));
-        counts.addView(countRow(Ui.PLAIN, "Posted, no colour", n[Post.NONE]));
-        counts.addView(countRow(Ui.EMPTY, "Nothing written", (int) blank));
+    private void showChart(Map<LocalDate, Integer> d, LocalDate from, LocalDate to) {
+        int[] n = new int[Post.MOODS.length];
+        for (Integer m : d.values()) n[m - Post.GREEN]++;
         long total = to.toEpochDay() - from.toEpochDay() + 1;
-        TextView sum = Ui.text(this, written + " of " + total + " days written", 14f, Ui.DIM,
-                false);
-        sum.setPadding(0, Ui.dp(this, 8), 0, 0);
-        counts.addView(sum);
+        int written = d.size();
+        if (written == 0) {
+            summary.setText("Nothing written in " + rangeName() + " yet");
+            chartRow.setVisibility(View.GONE);
+            return;
+        }
+        summary.setText(written + " of " + total + " days written in " + rangeName());
+        chartRow.setVisibility(View.VISIBLE);
+        pie.setCounts(n);
+        pie.select(pick == COLOUR ? pickMood : Post.ANY);
+
+        legend.removeAllViews();
+        for (int i = 0; i < n.length; i++) {
+            if (n[i] == 0) continue;      // only colours that happened
+            final int mood = Post.MOODS[i];
+            LinearLayout row = Ui.row(this);
+            int p = Ui.dp(this, 6);
+            row.setPadding(p, p, p, p);
+            boolean on = pick == COLOUR && pickMood == mood;
+            if (on) row.setBackground(Ui.card(this));
+            View sq = new View(this);
+            sq.setBackground(Ui.dot(this, mood));
+            LinearLayout.LayoutParams sl = Ui.lp(Ui.dp(this, 14), Ui.dp(this, 14));
+            sl.rightMargin = Ui.dp(this, 10);
+            row.addView(sq, sl);
+            row.addView(Ui.text(this, Post.name(mood), 15f, Ui.TEXT, on),
+                    Ui.lp(0, Ui.WRAP, 1f));
+            int pct = Math.round(100f * n[i] / written);
+            row.addView(Ui.text(this, n[i] + (n[i] == 1 ? " day" : " days") + " · "
+                    + pct + "%", 14f, Ui.DIM, false));
+            row.setClickable(true);
+            row.setContentDescription(Post.name(mood) + ", " + n[i] + (n[i] == 1 ? " day" : " days")
+                    + ", show its posts");
+            row.setOnClickListener(v -> toggleColour(mood));
+            legend.addView(row, Ui.lp(Ui.MATCH, Ui.WRAP));
+        }
     }
 
-    private View countRow(int color, String name, int count) {
-        LinearLayout row = Ui.row(this);
-        row.setPadding(0, Ui.dp(this, 5), 0, Ui.dp(this, 5));
-        View sq = new View(this);
-        GradientDrawable g = new GradientDrawable();
-        g.setColor(color);
-        g.setCornerRadius(Ui.dp(this, 4));
-        if (color == Ui.BLACK) g.setStroke(Ui.dp(this, 1), Ui.BLACK_EDGE);
-        sq.setBackground(g);
-        LinearLayout.LayoutParams lp = Ui.lp(Ui.dp(this, 18), Ui.dp(this, 18));
-        lp.rightMargin = Ui.dp(this, 12);
-        row.addView(sq, lp);
-        row.addView(Ui.text(this, name, 15f, Ui.TEXT, false), Ui.lp(0, Ui.WRAP, 1f));
-        row.addView(Ui.text(this, count + (count == 1 ? " day" : " days"), 15f, Ui.TEXT, true));
-        return row;
+    private void toggleColour(int mood) {
+        if (pick == COLOUR && pickMood == mood) choose(NONE, null, null, Post.ANY);
+        else choose(COLOUR, null, null, mood);
     }
 
-    private void loadDay() {
-        final LocalDate day = selected;
-        if (day == null) return;
+    // ---- the list -------------------------------------------------------------
+
+    private void choose(int kind, LocalDate day, YearMonth m, int mood) {
+        pick = kind;
+        pickDay = day;
+        pickMonth = m;
+        pickMood = mood;
+        // the donut and legend show which colour is chosen
+        refresh();
+        if (kind != NONE) {
+            scroll.postDelayed(() -> scroll.smoothScrollTo(0,
+                    Math.max(0, listBox.getTop() - Ui.dp(this, 8))), 150);
+        }
+    }
+
+    private void showPick() {
+        mosaic.select(pick == DAY ? pickDay : null);
+        mosaic.selectMonth(pick == MONTH && yearMode ? pickMonth : null);
+        pie.select(pick == COLOUR ? pickMood : Post.ANY);
+        final int ticket = ++loads;
+        if (pick == NONE) {
+            listBox.removeAllViews();
+            return;
+        }
+        final LocalDate from, to;
+        final int mood;
+        final String title;
+        switch (pick) {
+            case DAY:
+                from = to = pickDay;
+                mood = Post.ANY;
+                title = pickDay.format(DateTimeFormatter.ofPattern("EEEE d MMMM yyyy",
+                        Locale.getDefault()));
+                break;
+            case MONTH:
+                from = pickMonth.atDay(1);
+                to = pickMonth.atEndOfMonth();
+                mood = Post.ANY;
+                title = "All posts in " + monthName(pickMonth);
+                break;
+            case YEAR:
+                from = LocalDate.of(year, 1, 1);
+                to = LocalDate.of(year, 12, 31);
+                mood = Post.ANY;
+                title = "All posts in " + year;
+                break;
+            default:
+                from = rangeFrom();
+                to = rangeTo();
+                mood = pickMood;
+                title = Post.name(pickMood) + " posts in " + rangeName();
+        }
+        final boolean oldestFirst = pick == DAY;
         new Thread(() -> {
-            final List<Post> list = Store.get(getApplicationContext()).between(day, day);
+            final List<Post> list = Store.get(getApplicationContext())
+                    .find(from, to, mood, oldestFirst);
             ui.post(() -> {
-                if (isDestroyed() || !day.equals(selected)) return;
-                showDay(day, list);
+                if (ticket != loads || isDestroyed()) return;
+                showList(title, list);
             });
-        }, "day").start();
+        }, "list").start();
     }
 
-    private void showDay(final LocalDate day, List<Post> list) {
-        dayPosts.removeAllViews();
-        TextView h = Ui.text(this,
-                day.format(DateTimeFormatter.ofPattern("EEEE d MMMM", Locale.getDefault())),
-                18f, Ui.TEXT, true);
-        h.setPadding(0, Ui.dp(this, 14), 0, Ui.dp(this, 8));
-        dayPosts.addView(h);
+    private void showList(String title, List<Post> list) {
+        listBox.removeAllViews();
+        LinearLayout head = Ui.row(this);
+        head.setPadding(0, Ui.dp(this, 18), 0, Ui.dp(this, 8));
+        LinearLayout words = Ui.column(this);
+        words.addView(Ui.text(this, title, 18f, Ui.TEXT, true));
+        int n = list.size();
+        words.addView(Ui.text(this, n + (n == 1 ? " post" : " posts"), 13f, Ui.DIM, false));
+        head.addView(words, Ui.lp(0, Ui.WRAP, 1f));
+        Button close = Ui.button(this, "Close", Ui.BG, Ui.DIM);
+        close.setOnClickListener(v -> choose(NONE, null, null, Post.ANY));
+        head.addView(close);
+        listBox.addView(head);
+
+        if (pick == MONTH && yearMode) {
+            final YearMonth m = pickMonth;
+            Button open = Ui.button(this, "Open " + monthName(m), Ui.BUTTON, Ui.ACCENT);
+            open.setOnClickListener(v -> {
+                month = m;
+                yearMode = false;
+                refresh();
+            });
+            LinearLayout.LayoutParams lp = Ui.lp(Ui.MATCH, Ui.WRAP);
+            lp.bottomMargin = Ui.dp(this, 10);
+            listBox.addView(open, lp);
+        }
         if (list.isEmpty()) {
-            dayPosts.addView(Ui.text(this, "Nothing written on this day.", 15f, Ui.DIM, false));
+            listBox.addView(Ui.text(this, "Nothing written here.", 15f, Ui.DIM, false));
         }
         for (final Post p : list) {
-            LinearLayout c = Ui.row(this);
-            c.setBackground(Ui.card(this));
-            int pd = Ui.dp(this, 12);
-            c.setPadding(pd, pd, pd, pd);
-            View dot = new View(this);
-            GradientDrawable g = new GradientDrawable();
-            g.setShape(GradientDrawable.OVAL);
-            if (p.mood == Post.NONE) g.setStroke(Ui.dp(this, 2), Ui.PLAIN);
-            else g.setColor(Post.color(p.mood));
-            if (p.mood == Post.BLACK) g.setStroke(Ui.dp(this, 1), Ui.BLACK_EDGE);
-            dot.setBackground(g);
-            LinearLayout.LayoutParams dl = Ui.lp(Ui.dp(this, 12), Ui.dp(this, 12));
-            dl.rightMargin = Ui.dp(this, 10);
-            c.addView(dot, dl);
-            String what = !p.title.isEmpty() ? p.title : !p.body.isEmpty() ? p.body
-                    : p.photo != null ? "Picture" : Post.name(p.mood);
-            TextView t = Ui.text(this, p.timeText() + "  " + what, 15f, Ui.TEXT, false);
-            t.setMaxLines(2);
-            t.setEllipsize(android.text.TextUtils.TruncateAt.END);
-            c.addView(t, Ui.lp(0, Ui.WRAP, 1f));
-            c.setClickable(true);
-            c.setOnClickListener(v -> startActivity(new Intent(this, EditActivity.class)
+            PostCard c = new PostCard(this);
+            c.bind(p);
+            c.root.setClickable(true);
+            c.root.setOnClickListener(v -> startActivity(new Intent(this, EditActivity.class)
                     .putExtra(EditActivity.EXTRA_ID, p.id)));
             LinearLayout.LayoutParams lp = Ui.lp(Ui.MATCH, Ui.WRAP);
             lp.bottomMargin = Ui.dp(this, 8);
-            dayPosts.addView(c, lp);
+            listBox.addView(c.root, lp);
         }
-        if (!day.isAfter(LocalDate.now())) {
+        if (pick == DAY && !pickDay.isAfter(LocalDate.now())) {
+            final LocalDate day = pickDay;
             Button write = Ui.button(this, "Write for this day", Ui.BUTTON, Ui.ACCENT);
             write.setOnClickListener(v -> startActivity(new Intent(this, EditActivity.class)
                     .putExtra(EditActivity.EXTRA_DAY, day.toEpochDay())));
-            dayPosts.addView(write, Ui.lp(Ui.MATCH, Ui.WRAP));
+            listBox.addView(write, Ui.lp(Ui.MATCH, Ui.WRAP));
         }
     }
 }

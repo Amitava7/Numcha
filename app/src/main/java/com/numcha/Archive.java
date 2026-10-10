@@ -53,12 +53,14 @@ final class Archive {
     private Archive() {
     }
 
-    private static final String[] COLOURS = {"none", "green", "yellow", "red", "black"};
+    // indexed by the Post colour constants; slot 0 is unused
+    private static final String[] COLOURS = {"", "green", "yellow", "red", "black"};
 
+    /** A colour name from an export; anything unknown becomes the default. */
     static int moodFrom(String s) {
-        if (s == null) return Post.NONE;
-        for (int i = 0; i < COLOURS.length; i++) if (COLOURS[i].equalsIgnoreCase(s)) return i;
-        return Post.NONE;
+        if (s == null) return Post.DEFAULT;
+        for (int i = 1; i < COLOURS.length; i++) if (COLOURS[i].equalsIgnoreCase(s)) return i;
+        return Post.DEFAULT;
     }
 
     static void export(Context c, Uri dest) throws IOException, JSONException {
@@ -174,7 +176,7 @@ final class Archive {
                 p.at = o.getLong("at");
                 p.title = o.optString("title", "");
                 p.body = o.optString("text", "");
-                p.mood = moodFrom(o.optString("colour", "none"));
+                p.mood = moodFrom(o.optString("colour", ""));
                 File pf = photos.get(o.optString("photo", ""));
                 if (pf != null && pf.exists()) {
                     // moved as-is: re-encoding would lose quality on every round trip
