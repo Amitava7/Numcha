@@ -11,6 +11,7 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -137,13 +138,36 @@ final class Store extends SQLiteOpenHelper {
                 oldestFirst ? "at ASC, id ASC" : "at DESC, id DESC");
     }
 
+    /** The posts of each day in [from, to], oldest first within a day. */
+    private Map<LocalDate, List<Post>> byDay(LocalDate from, LocalDate to) {
+        Map<LocalDate, List<Post>> out = new LinkedHashMap<LocalDate, List<Post>>();
+        for (Post p : between(from, to)) {
+            List<Post> l = out.get(p.day());
+            if (l == null) out.put(p.day(), l = new ArrayList<Post>());
+            l.add(p);
+        }
+        return out;
+    }
+
     /**
-     * The colour each day shows on the calendar: that of the day's latest post.
+     * The colour each day shows on the calendar ({@link Post#dayColour}).
      * Days with no posts are absent from the map.
      */
     Map<LocalDate, Integer> days(LocalDate from, LocalDate to) {
         Map<LocalDate, Integer> out = new HashMap<LocalDate, Integer>();
-        for (Post p : between(from, to)) out.put(p.day(), p.mood);   // oldest first: last wins
+        for (Map.Entry<LocalDate, List<Post>> e : byDay(from, to).entrySet()) {
+            out.put(e.getKey(), Post.dayColour(e.getValue()));
+        }
+        return out;
+    }
+
+    /** Every post on the exceptional days in [from, to]. */
+    List<Post> onExceptionalDays(LocalDate from, LocalDate to, boolean oldestFirst) {
+        List<Post> out = new ArrayList<Post>();
+        for (List<Post> day : byDay(from, to).values()) {
+            if (Post.dayColour(day) == Post.EXCEPTIONAL) out.addAll(day);
+        }
+        if (!oldestFirst) java.util.Collections.reverse(out);
         return out;
     }
 

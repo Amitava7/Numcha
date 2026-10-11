@@ -32,10 +32,21 @@ Tap a post in the list to edit or delete it.
 
 **Calendar.** *Month* shows a calendar of coloured squares, one per day.
 *Year* shows all twelve months, 365 squares. A day takes the colour of its
-latest post.
+latest post, unless it is **exceptional**.
+
+**Exceptional days** are shown in **violet**. No post can be violet; a day
+earns it from the sum of its posts:
+
+- two or more green posts and nothing else, or
+- more than four (five or more) green posts, even with yellow, red or black
+  posts the same day.
+
+Violet rather than blue, because blue is already the app's accent colour (the
+buttons, today's outline, the current month's name), so a blue day would read
+as "today" or "selected".
 
 Under the squares, a **donut chart** shows how the written days split by
-colour, with a count on each slice and a legend beside it. Only colours that
+colour (exceptional days are their own slice), with a count on each slice and a legend beside it. Only colours that
 occurred appear; days with nothing written are left out of the chart (the line
 above it says how many days of the month or year were written).
 
@@ -47,7 +58,8 @@ Tap to list posts underneath:
 - **a month's name** in the year view: every post of that month, with a button
   to open it in the month view
 - **a slice of the donut** or a legend row: the posts of that colour in the
-  month or year on screen; tap it again to close
+  month or year on screen (for *Exceptional*, every post of those days); tap it
+  again to close
 
 **Lock.** In Settings, *Lock with PIN* (4 to 8 digits) and *Unlock with
 fingerprint* can each be switched on and off. With the lock on, Numcha asks for
@@ -94,13 +106,31 @@ Every push builds one. Open the **Actions** tab, pick the latest *Build APK*
 run and download the `numcha-apk` artifact. Pushing a tag like `v1.0` also
 publishes a GitHub release with the APK attached.
 
-By default CI signs with a throwaway key generated for that run, which means
-consecutive builds have different signatures, so you have to uninstall the
-old copy before installing a new one. **Uninstalling deletes the journal**, so
-export first, or set up a stable signature once by adding four repository
-secrets: `KEYSTORE_BASE64` (`base64 -w0 your.jks`), `KEY_ALIAS`,
-`KEY_PASSWORD` and `STORE_PASSWORD`. Then every build installs over the last
-one and keeps your posts.
+### Updating without losing the journal
+
+Android only installs a new APK over the old one when both are signed with
+the **same key**, and uninstalling deletes the journal. So the build signs
+with a key kept in four repository secrets (Settings → Secrets and variables
+→ Actions → New repository secret):
+
+| secret | value |
+| --- | --- |
+| `KEYSTORE_BASE64` | the keystore file, base64 encoded (`base64 -w0 numcha.jks`) |
+| `KEY_ALIAS` | the key's alias |
+| `KEY_PASSWORD` | the key's password |
+| `STORE_PASSWORD` | the keystore's password |
+
+The key must not be committed: the repository is public, and anyone holding
+the key could sign an "update" that installs over Numcha and reads the
+journal. Keep a copy of the key somewhere safe as well, because GitHub will
+not show a secret again, and a lost key means one more uninstall.
+
+Each build's version code is the CI run number, so every build is newer than
+the last and installs as an update.
+
+Without the secrets, CI still builds, but signs with a throwaway key made for
+that run and says so in the job summary; such an APK cannot update an
+installed copy.
 
 Target device is a Galaxy S24 Ultra, so `minSdk` is 34 and there is no
 compatibility code for anything older.
@@ -127,7 +157,7 @@ are not driven by the smoke test.
 
 ```
 app/src/main/java/com/numcha/
-  Post.java              one entry, and the colour constants
+  Post.java              one entry, the colours, and the exceptional-day rule
   Store.java             SQLite + the photos folder
   Photos.java            shrinking, saving and loading pictures
   Archive.java           export / import as a zip

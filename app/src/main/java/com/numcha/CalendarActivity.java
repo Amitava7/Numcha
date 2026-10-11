@@ -21,7 +21,7 @@ import java.util.Map;
 
 /**
  * The mosaic: a month or a year of days in their colours, and a donut of how
- * many of the written days were green, yellow, red and black.
+ * many of the written days were exceptional, green, yellow, red and black.
  *
  * Below it, a list of posts for whatever was tapped last: a day, a month (the
  * heading in month view, a month's name in year view), the year (the heading in
@@ -250,8 +250,10 @@ public final class CalendarActivity extends Base {
     // ---- the donut ------------------------------------------------------------
 
     private void showChart(Map<LocalDate, Integer> d, LocalDate from, LocalDate to) {
-        int[] n = new int[Post.MOODS.length];
-        for (Integer m : d.values()) n[m - Post.GREEN]++;
+        int[] n = new int[Post.DAY_COLOURS.length];
+        for (Integer m : d.values()) {
+            for (int i = 0; i < n.length; i++) if (Post.DAY_COLOURS[i] == m) n[i]++;
+        }
         long total = to.toEpochDay() - from.toEpochDay() + 1;
         int written = d.size();
         if (written == 0) {
@@ -267,10 +269,10 @@ public final class CalendarActivity extends Base {
         legend.removeAllViews();
         for (int i = 0; i < n.length; i++) {
             if (n[i] == 0) continue;      // only colours that happened
-            final int mood = Post.MOODS[i];
+            final int mood = Post.DAY_COLOURS[i];
             LinearLayout row = Ui.row(this);
-            int p = Ui.dp(this, 6);
-            row.setPadding(p, p, p, p);
+            int p = Ui.dp(this, 4);
+            row.setPadding(Ui.dp(this, 8), p, p, p);
             boolean on = pick == COLOUR && pickMood == mood;
             if (on) row.setBackground(Ui.card(this));
             View sq = new View(this);
@@ -278,11 +280,15 @@ public final class CalendarActivity extends Base {
             LinearLayout.LayoutParams sl = Ui.lp(Ui.dp(this, 14), Ui.dp(this, 14));
             sl.rightMargin = Ui.dp(this, 10);
             row.addView(sq, sl);
-            row.addView(Ui.text(this, Post.name(mood), 15f, Ui.TEXT, on),
-                    Ui.lp(0, Ui.WRAP, 1f));
+            // name above, count below, so a long name never wraps beside its count
+            LinearLayout words = Ui.column(this);
+            TextView name = Ui.text(this, Post.name(mood), 15f, Ui.TEXT, on);
+            name.setSingleLine(true);
+            words.addView(name);
             int pct = Math.round(100f * n[i] / written);
-            row.addView(Ui.text(this, n[i] + (n[i] == 1 ? " day" : " days") + " · "
-                    + pct + "%", 14f, Ui.DIM, false));
+            words.addView(Ui.text(this, n[i] + (n[i] == 1 ? " day" : " days") + " \u00b7 "
+                    + pct + "%", 13f, Ui.DIM, false));
+            row.addView(words, Ui.lp(0, Ui.WRAP, 1f));
             row.setClickable(true);
             row.setContentDescription(Post.name(mood) + ", " + n[i] + (n[i] == 1 ? " day" : " days")
                     + ", show its posts");
@@ -346,12 +352,16 @@ public final class CalendarActivity extends Base {
                 from = rangeFrom();
                 to = rangeTo();
                 mood = pickMood;
-                title = Post.name(pickMood) + " posts in " + rangeName();
+                title = mood == Post.EXCEPTIONAL ? "Exceptional days in " + rangeName()
+                        : Post.name(pickMood) + " posts in " + rangeName();
         }
         final boolean oldestFirst = pick == DAY;
         new Thread(() -> {
-            final List<Post> list = Store.get(getApplicationContext())
-                    .find(from, to, mood, oldestFirst);
+            Store s = Store.get(getApplicationContext());
+            // an exceptional day lists all of its posts, whatever their colour
+            final List<Post> list = mood == Post.EXCEPTIONAL
+                    ? s.onExceptionalDays(from, to, oldestFirst)
+                    : s.find(from, to, mood, oldestFirst);
             ui.post(() -> {
                 if (ticket != loads || isDestroyed()) return;
                 showList(title, list);

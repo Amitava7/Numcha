@@ -43,14 +43,15 @@ jobs:
             echo "Signing with the keystore from repository secrets."
           else
             # No secrets configured: sign with a throwaway key so the APK still
-            # installs. Every build then has a different signature, so uninstall
-            # the previous build before installing a new one.
+            # installs. Every build then has a different signature, so it cannot
+            # update the copy on the phone - and uninstalling deletes the journal.
             ALIAS=numcha; STOREPW=numcha; KEYPW=numcha
             keytool -genkeypair -keystore "$KS" -storetype PKCS12 \
               -storepass "$STOREPW" -keypass "$KEYPW" -alias "$ALIAS" \
               -keyalg RSA -keysize 2048 -validity 10000 \
               -dname "CN=Numcha CI, OU=Build, O=Numcha, C=ZZ"
-            echo "No KEYSTORE_BASE64 secret: signed with a throwaway CI key."
+            echo "::warning::No KEYSTORE_BASE64 secret: signed with a throwaway key. This APK cannot update an installed Numcha."
+            echo "### ⚠️ Signed with a throwaway key - this APK cannot update an installed copy. Add the signing secrets (see README)." >> "$GITHUB_STEP_SUMMARY"
           fi
           echo "::add-mask::$STOREPW"
           echo "::add-mask::$KEYPW"
@@ -67,7 +68,8 @@ jobs:
             -PncStoreFile="$NC_STORE_FILE" \
             -PncStorePassword="$NC_STORE_PASSWORD" \
             -PncKeyAlias="$NC_KEY_ALIAS" \
-            -PncKeyPassword="$NC_KEY_PASSWORD"
+            -PncKeyPassword="$NC_KEY_PASSWORD" \
+            -PncBuildNumber="${{ github.run_number }}"
 
       - name: Report size
         run: |

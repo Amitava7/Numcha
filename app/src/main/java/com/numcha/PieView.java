@@ -9,7 +9,8 @@ import android.view.MotionEvent;
 import android.view.View;
 
 /**
- * A donut of the written days by colour. Only colours with at least one day
+ * A donut of the written days by colour, exceptional days included. Only
+ * colours with at least one day
  * get a slice; each slice carries its count, and the middle the total. Tapping
  * a slice reports its colour, and the chosen slice stands out while the rest
  * fade back.
@@ -20,7 +21,7 @@ final class PieView extends View {
         void onSlice(int mood);
     }
 
-    private final int[] counts = new int[Post.MOODS.length];
+    private final int[] counts = new int[Post.DAY_COLOURS.length];
     private int total;
     private int selected = Post.ANY;
     private Listener listener;
@@ -44,7 +45,7 @@ final class PieView extends View {
         listener = l;
     }
 
-    /** counts[i] is the number of days of colour Post.MOODS[i]. */
+    /** counts[i] is the number of days of colour Post.DAY_COLOURS[i]. */
     void setCounts(int[] c) {
         total = 0;
         for (int i = 0; i < counts.length; i++) {
@@ -53,7 +54,7 @@ final class PieView extends View {
         }
         StringBuilder sb = new StringBuilder("Colour chart: ");
         for (int i = 0; i < counts.length; i++) {
-            if (counts[i] > 0) sb.append(Post.name(Post.MOODS[i])).append(' ')
+            if (counts[i] > 0) sb.append(Post.name(Post.DAY_COLOURS[i])).append(' ')
                     .append(counts[i]).append(", ");
         }
         setContentDescription(sb.toString());
@@ -94,7 +95,7 @@ final class PieView extends View {
         float start = -90f;
         for (int i = 0; i < counts.length; i++) {
             if (counts[i] == 0) continue;
-            int mood = Post.MOODS[i];
+            int mood = Post.DAY_COLOURS[i];
             float sweep = 360f * counts[i] / total;
             boolean faded = selected != Post.ANY && selected != mood;
             boolean chosen = selected == mood;
@@ -153,7 +154,7 @@ final class PieView extends View {
         for (int i = 0; i < counts.length; i++) {
             if (counts[i] == 0) continue;
             at += 360.0 * counts[i] / total;
-            if (deg < at) return Post.MOODS[i];
+            if (deg < at) return Post.DAY_COLOURS[i];
         }
         return Post.ANY;
     }

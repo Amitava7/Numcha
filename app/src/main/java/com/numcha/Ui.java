@@ -31,6 +31,7 @@ final class Ui {
     static final int YELLOW = 0xFFF2C94C;
     static final int RED = 0xFFE5544B;
     static final int BLACK = 0xFF000000;
+    static final int VIOLET = 0xFFA371F7;   // an exceptional day
     static final int BLACK_EDGE = 0xFF8B949E; // so a black day shows on a dark page
 
     private Ui() {
